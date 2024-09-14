@@ -1,0 +1,13 @@
+CREATE TABLE Usuario (
+    id SERIAL PRIMARY KEY,
+    usuario VARCHAR(50) UNIQUE NOT NULL,
+    email VARCHAR(100) UNIQUE NOT NULL,
+    password VARCHAR(255) NOT NULL
+);
+
+CREATE TABLE Busca (
+    id SERIAL PRIMARY KEY,
+    usuario_id INTEGER REFERENCES Usuario(id),
+    busca TEXT NOT NULL,
+    busca_data TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
