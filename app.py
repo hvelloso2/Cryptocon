@@ -133,16 +133,19 @@ if is_logged_in():
     y_pred = model.predict(X_test)
     st.write(f'MSE ({model_choice}): {mean_squared_error(y_test, y_pred)}')
 
-    future_days = np.array([df['Days'].max() + i for i in range(1, 8)])
+    # Adicionar input para o número de dias a serem previstos
+    forecast_days = st.slider('Quantos dias no futuro você deseja prever?', min_value=1, max_value=30, value=7)
+
+    future_days = np.array([df['Days'].max() + i for i in range(1, forecast_days + 1)])
 
     # Em vez de usar valores constantes, projete variações com base nos últimos dias
-    recent_volume = df['Volume'].values[-7:]  # Usar os últimos 7 dias de volume como base
+    recent_volume = df['Volume'].values[-forecast_days:]  # Usar os últimos dias de volume como base
     future_volumes = np.roll(recent_volume, shift=-1)  # Rotacionar para criar uma projeção simples
 
-    recent_ma_10 = df['MA_10'].values[-7:]  # Últimos 7 dias da média móvel de 10 dias
+    recent_ma_10 = df['MA_10'].values[-forecast_days:]  # Últimos dias da média móvel de 10 dias
     future_ma_10 = np.roll(recent_ma_10, shift=-1)  # Rotacionar para simular uma variação futura
 
-    recent_ma_30 = df['MA_30'].values[-7:]  # Últimos 7 dias da média móvel de 30 dias
+    recent_ma_30 = df['MA_30'].values[-forecast_days:]  # Últimos dias da média móvel de 30 dias
     future_ma_30 = np.roll(recent_ma_30, shift=-1)  # Rotacionar para simular uma variação futura
 
     future_X = pd.DataFrame({
@@ -156,7 +159,7 @@ if is_logged_in():
     future_X_scaled = scaler.transform(future_X)
     future_prices = model.predict(future_X_scaled)
 
-    future_dates = [df['Date'].max() + datetime.timedelta(days=i) for i in range(1, 8)]
+    future_dates = [df['Date'].max() + datetime.timedelta(days=i) for i in range(1, forecast_days + 1)]
 
     # Combinar dados históricos e previsões futuras para plotar no gráfico
     prediction_df = pd.DataFrame({
@@ -175,5 +178,5 @@ if is_logged_in():
 
     st.plotly_chart(fig)
 
-    st.subheader(f'Previsão para os próximos 7 dias ({model_choice})')
+    st.subheader(f'Previsão para os próximos {forecast_days} dias ({model_choice})')
     st.dataframe(prediction_df)
