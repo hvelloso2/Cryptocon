@@ -181,8 +181,8 @@ if is_logged_in():
     df['Date'] = df.index
     df['Days'] = (df['Date'] - df['Date'].min()).dt.days
 
-    df['Volume'] = df['Volume']
-    df['MA_10'] = df['Close'].rolling(window=10).mean()  # Média móvel de 10 dias
+    # Adicionando média móvel
+    df['MA_10'] = df['Close'].rolling(window=10).mean()  
     df['MA_30'] = df['Close'].rolling(window=30).mean()
     df = df.dropna()
 
@@ -195,6 +195,7 @@ if is_logged_in():
     # Dividir os dados em treino e teste
     X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2, random_state=42)
 
+    # Escolha do modelo
     model_choice = st.selectbox('Escolha o modelo de previsão', ['Regressão Linear', 'Random Forest'])
 
     if model_choice == 'Regressão Linear':
@@ -202,33 +203,60 @@ if is_logged_in():
     else:
         model = RandomForestRegressor(n_estimators=300, random_state=42, max_depth=20)
 
+    # Treinar o modelo
     model.fit(X_train, y_train)
     y_pred = model.predict(X_test)
     st.write(f'MSE ({model_choice}): {mean_squared_error(y_test, y_pred)}')
-    
+
     # Prever preços para os próximos dias
     forecast_days = st.slider('Quantos dias no futuro você deseja prever?', min_value=1, max_value=30, value=7)
     future_days = np.array([df['Days'].max() + i for i in range(1, forecast_days + 1)])
 
+    # Gerar os dados futuros baseados nos últimos valores conhecidos
     recent_volume = df['Volume'].values[-forecast_days:]
-    future_volumes = np.roll(recent_volume, shift=-1)
-
     recent_ma_10 = df['MA_10'].values[-forecast_days:]
-    future_ma_10 = np.roll(recent_ma_10, shift=-1)
-
     recent_ma_30 = df['MA_30'].values[-forecast_days:]
-    future_ma_30 = np.roll(recent_ma_30, shift=-1)
 
+    # Se os valores forem menores que forecast_days, complete com o último valor conhecido
+    if len(recent_volume) < forecast_days:
+        recent_volume = np.pad(recent_volume, (0, forecast_days - len(recent_volume)), mode='edge')
+    if len(recent_ma_10) < forecast_days:
+        recent_ma_10 = np.pad(recent_ma_10, (0, forecast_days - len(recent_ma_10)), mode='edge')
+    if len(recent_ma_30) < forecast_days:
+        recent_ma_30 = np.pad(recent_ma_30, (0, forecast_days - len(recent_ma_30)), mode='edge')
+
+    # Criar DataFrame para os dados futuros
     future_X = pd.DataFrame({
         'Days': future_days,
-        'Volume': future_volumes,
-        'MA_10': future_ma_10,
-        'MA_30': future_ma_30
+        'Volume': recent_volume,
+        'MA_10': recent_ma_10,
+        'MA_30': recent_ma_30
     })
 
+    # Escalar os dados futuros com o mesmo scaler do treinamento
     future_X_scaled = scaler.transform(future_X)
-    future_predictions = model.predict(future_X_scaled)
+    future_prices = model.predict(future_X_scaled)
 
-    df_future = pd.DataFrame({'Dias': future_days, 'Preço Previsto': future_predictions})
-    st.line_chart(df_future.set_index('Dias')['Preço Previsto'])
-    log_user_action(st.session_state['username'], "Fez previsão de preço.")
+    # Gerar datas futuras
+    future_dates = [df['Date'].max() + datetime.timedelta(days=i) for i in range(1, forecast_days + 1)]
+
+    # Criar DataFrame para exibir a previsão
+    prediction_df = pd.DataFrame({
+        'Date': future_dates,
+        'Close': future_prices
+    })
+
+    # Combinar dados históricos e previstos para o gráfico
+    combined_df = pd.concat([df[['Date', 'Close']], prediction_df])
+
+    # Exibir o gráfico
+    fig = px.line(combined_df, x='Date', y='Close', title=f'{crypto_selected} - Histórico e Previsão ({model_choice})')
+
+    # Adicionar a linha de previsão
+    fig.add_scatter(x=prediction_df['Date'], y=prediction_df['Close'], mode='lines', 
+                    name='Previsão', line=dict(color='red', dash='dash'))
+
+    st.plotly_chart(fig)
+
+    st.subheader(f'Previsão para os próximos {forecast_days} dias ({model_choice})')
+    st.dataframe(prediction_df)
