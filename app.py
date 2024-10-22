@@ -12,19 +12,23 @@ from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error
 from sklearn.preprocessing import StandardScaler
+import logging
+import itertools
 
-
+# Função para criar o arquivo de usuários
 def create_users_file():
     if not os.path.exists('users.csv'):
         with open('users.csv', mode='w', newline='') as file:
             writer = csv.writer(file)
             writer.writerow(['username', 'password', 'email'])
 
+# Função para adicionar usuário
 def add_user_csv(username, password, email):
     with open('users.csv', mode='a', newline='') as file:
         writer = csv.writer(file)
         writer.writerow([username, password, email])
 
+# Função para validar o login
 def validate_user_csv(username, password):
     with open('users.csv', mode='r') as file:
         reader = csv.reader(file)
@@ -33,20 +37,89 @@ def validate_user_csv(username, password):
                 return True
     return False
 
+# Função para verificar se o usuário está logado
 def is_logged_in():
     return st.session_state.get('logged_in', False)
 
+# Função de logout
 def logout():
+    username = st.session_state['username']
+    log_user_action(username, "Usuario fez logout.")
+    # Resetar o logger ao fazer logout para evitar que o próximo usuário use o mesmo logger
+    logging.getLogger(username).handlers.clear()
     st.session_state['logged_in'] = False
     st.session_state['username'] = None
 
+# Função ao fazer login com sucesso
 def login_success(username):
     st.session_state['logged_in'] = True
     st.session_state['username'] = username
+    log_user_action(username, "Usuario fez login.")
 
+# Função para criar arquivo de log do usuário
+def create_log_file(username):
+    log_dir = 'logs'
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+    log_filename = os.path.join(log_dir, f'{username}_log.txt')
+
+    # Criar um logger específico para o usuário
+    logger = logging.getLogger(username)
+    logger.setLevel(logging.INFO)
+    
+    # Verificar se já existe um handler, se existir, remover para evitar duplicação
+    if logger.hasHandlers():
+        logger.handlers.clear()
+
+    # Criar um handler para o arquivo específico do usuário
+    file_handler = logging.FileHandler(log_filename)
+    formatter = logging.Formatter('%(asctime)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+    file_handler.setFormatter(formatter)
+
+    logger.addHandler(file_handler)
+    return logger
+
+# Função para registrar ações no log
+def log_user_action(username, action):
+    logger = logging.getLogger(username)
+    if not logger.handlers:
+        # Se não houver handlers, criar um novo arquivo de log
+        logger = create_log_file(username)
+    logger.info(action)
+
+# Função para buscar as principais criptomoedas por preço
+def get_top_cryptos(limit=5):
+    top_cryptos = ['BTC-USD', 'ETH-USD', 'BNB-USD', 'ADA-USD', 'SOL-USD', 'XRP-USD', 'DOGE-USD']
+    data = []
+    for crypto in top_cryptos:
+        ticker = yf.Ticker(crypto)
+        hist = ticker.history(period='1d')
+        if not hist.empty:
+            price = hist['Close'][0]
+            name = crypto.split('-')[0]
+            data.append((name, price))
+
+    # Ordenar pelas criptomoedas com maior preço
+    data.sort(key=lambda x: x[1], reverse=True)
+    return data[:limit]
+
+# Função para mostrar carrossel das criptos
+def show_crypto_carousel(cryptos):
+    st.markdown("## Principais Criptomoedas")
+    cols = itertools.cycle(st.columns(3))  # Criar um carrossel com 3 colunas
+    for crypto, price in cryptos:
+        col = next(cols)
+        col.metric(label=crypto, value=f"${price:,.2f}")
+
+# Função principal da aplicação
 create_users_file()
 
 if not is_logged_in():
+    # Carregar as criptomoedas principais e exibir no carrossel
+    top_cryptos = get_top_cryptos()
+    show_crypto_carousel(top_cryptos)
+
+    # Menu de login e cadastro
     menu = ['Login', 'Cadastro']
     choice = st.sidebar.selectbox('Menu', menu)
 
@@ -71,11 +144,12 @@ if not is_logged_in():
             else:
                 st.error('Nome de usuário ou senha incorretos')
 
+# Após o login, mostra o dashboard
 if is_logged_in():
-
     st.sidebar.text(f'Logado como: {st.session_state["username"]}')
     st.sidebar.button("Logout", on_click=logout)
 
+    # Carregar informações de criptomoedas
     with open('data.json', 'r') as _json:
         data_string = _json.read()
 
@@ -100,20 +174,20 @@ if is_logged_in():
 
     st.title(f'Valores de {crypto_selected}')
     st.dataframe(df)
+    log_user_action(st.session_state['username'], f"Visualizou valores de {crypto_selected}.")
 
+    # Previsão de Preços
     st.subheader('Previsão de Preço')
-
     df['Date'] = df.index
     df['Days'] = (df['Date'] - df['Date'].min()).dt.days
 
     df['Volume'] = df['Volume']
     df['MA_10'] = df['Close'].rolling(window=10).mean()  # Média móvel de 10 dias
-    df['MA_30'] = df['Close'].rolling(window=30).mean() 
-    df = df.dropna()  
+    df['MA_30'] = df['Close'].rolling(window=30).mean()
+    df = df.dropna()
 
     # Normalizar as features para evitar discrepâncias nas escalas
     scaler = StandardScaler()
-
     X = df[['Days', 'Volume', 'MA_10', 'MA_30']]
     X_scaled = scaler.fit_transform(X)
     y = df['Close'].values
@@ -129,24 +203,21 @@ if is_logged_in():
         model = RandomForestRegressor(n_estimators=300, random_state=42, max_depth=20)
 
     model.fit(X_train, y_train)
-
     y_pred = model.predict(X_test)
     st.write(f'MSE ({model_choice}): {mean_squared_error(y_test, y_pred)}')
-
-    # Adicionar input para o número de dias a serem previstos
+    
+    # Prever preços para os próximos dias
     forecast_days = st.slider('Quantos dias no futuro você deseja prever?', min_value=1, max_value=30, value=7)
-
     future_days = np.array([df['Days'].max() + i for i in range(1, forecast_days + 1)])
 
-    # Em vez de usar valores constantes, projete variações com base nos últimos dias
-    recent_volume = df['Volume'].values[-forecast_days:]  # Usar os últimos dias de volume como base
-    future_volumes = np.roll(recent_volume, shift=-1)  # Rotacionar para criar uma projeção simples
+    recent_volume = df['Volume'].values[-forecast_days:]
+    future_volumes = np.roll(recent_volume, shift=-1)
 
-    recent_ma_10 = df['MA_10'].values[-forecast_days:]  # Últimos dias da média móvel de 10 dias
-    future_ma_10 = np.roll(recent_ma_10, shift=-1)  # Rotacionar para simular uma variação futura
+    recent_ma_10 = df['MA_10'].values[-forecast_days:]
+    future_ma_10 = np.roll(recent_ma_10, shift=-1)
 
-    recent_ma_30 = df['MA_30'].values[-forecast_days:]  # Últimos dias da média móvel de 30 dias
-    future_ma_30 = np.roll(recent_ma_30, shift=-1)  # Rotacionar para simular uma variação futura
+    recent_ma_30 = df['MA_30'].values[-forecast_days:]
+    future_ma_30 = np.roll(recent_ma_30, shift=-1)
 
     future_X = pd.DataFrame({
         'Days': future_days,
@@ -155,28 +226,9 @@ if is_logged_in():
         'MA_30': future_ma_30
     })
 
-    # Normalizar as variáveis futuras com o mesmo scaler
     future_X_scaled = scaler.transform(future_X)
-    future_prices = model.predict(future_X_scaled)
+    future_predictions = model.predict(future_X_scaled)
 
-    future_dates = [df['Date'].max() + datetime.timedelta(days=i) for i in range(1, forecast_days + 1)]
-
-    # Combinar dados históricos e previsões futuras para plotar no gráfico
-    prediction_df = pd.DataFrame({
-        'Date': future_dates,
-        'Close': future_prices
-    })
-
-    st.subheader(f'Histórico e Previsão ({model_choice})')
-    
-    combined_df = pd.concat([df[['Date', 'Close']], prediction_df])
-
-    fig = px.line(combined_df, x='Date', y='Close', title=f'{crypto_selected} - Histórico e Previsão ({model_choice})')
-
-    fig.add_scatter(x=prediction_df['Date'], y=prediction_df['Close'], mode='lines', 
-                    name='Previsão', line=dict(color='red', dash='dash'))
-
-    st.plotly_chart(fig)
-
-    st.subheader(f'Previsão para os próximos {forecast_days} dias ({model_choice})')
-    st.dataframe(prediction_df)
+    df_future = pd.DataFrame({'Dias': future_days, 'Preço Previsto': future_predictions})
+    st.line_chart(df_future.set_index('Dias')['Preço Previsto'])
+    log_user_action(st.session_state['username'], "Fez previsão de preço.")
