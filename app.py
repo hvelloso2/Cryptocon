@@ -160,21 +160,27 @@ if is_logged_in():
     crypto_dict = dict(zip(crypto_names, crypto_symbols))
     crypto_selected = st.selectbox(label='Select your Crypto:', options=crypto_dict.keys())
 
+    st.subheader("Escolha o intervalo de tempo")
+    period_options = {
+        "1 Ano": 365,
+        "6 Meses": 180,
+        "3 Meses": 90
+    }
+    selected_period = st.selectbox("Selecione o intervalo", options=list(period_options.keys()))
+
+    # Data final é o dia atual, e a data inicial é calculada com base no intervalo selecionado
     today_date = datetime.datetime.now()
-    delta_date = datetime.timedelta(days=360)
+    delta_days = period_options[selected_period]
+    start_date = today_date - datetime.timedelta(days=delta_days)
 
-    col1, col2 = st.columns(2)
-    with col1:
-        start_date = st.date_input(label='Select start date:', value=today_date - delta_date)
-    with col2:
-        final_date = st.date_input(label='Select final date:', value=today_date)
-
+    # Obter os dados históricos
     _symbol = crypto_dict[crypto_selected] + '-USD'
-    df = yf.Ticker(_symbol).history(interval='1d', start=start_date, end=final_date)
+    df = yf.Ticker(_symbol).history(interval='1d', start=start_date, end=today_date)
 
-    st.title(f'Valores de {crypto_selected}')
-    st.dataframe(df)
-    log_user_action(st.session_state['username'], f"Visualizou valores de {crypto_selected}.")
+    # Exibir o valor de fechamento apenas
+    st.title(f'Valores de Fechamento de {crypto_selected}')
+    st.dataframe(df[['Close']])
+    log_user_action(st.session_state['username'], f"Visualizou valores de fechamento de {crypto_selected} para o periodo de {selected_period}.")
 
     # Previsão de Preços
     st.subheader('Previsão de Preço')
