@@ -14,6 +14,10 @@ from sklearn.metrics import mean_squared_error
 from sklearn.preprocessing import StandardScaler
 import logging
 import itertools
+import matplotlib.pyplot as plt
+from sklearn.tree import plot_tree
+import io
+import base64
 
 # Função para criar o arquivo de usuários
 def create_users_file():
@@ -218,6 +222,88 @@ if is_logged_in():
             model.fit(X_train, y_train)
             y_pred = model.predict(X_test)
             st.write(f'MSE ({model_choice}): {mean_squared_error(y_test, y_pred)}')
+
+            # Visualizar a árvore de decisão se for Random Forest
+            if model_choice == 'Random Forest':
+                st.subheader('Visualização da Árvore de Decisão (Primeira Árvore do Random Forest)')
+                
+                # Controle para profundidade da árvore
+                tree_depth = st.slider('Profundidade da Árvore', min_value=1, max_value=10, value=3)
+                
+                # Criar uma figura do matplotlib
+                plt.figure(figsize=(20,10))
+                
+                # Plotar a primeira árvore do Random Forest
+                plot_tree(model.estimators_[0], 
+                         feature_names=['Days', 'Volume', 'MA_10', 'MA_30'],
+                         filled=True,
+                         rounded=True,
+                         max_depth=tree_depth,
+                         fontsize=10)
+                
+                # Salvar a figura em um buffer
+                buf = io.BytesIO()
+                plt.savefig(buf, format='png', bbox_inches='tight')
+                plt.close()
+                
+                # Converter a imagem para base64
+                buf.seek(0)
+                img_str = base64.b64encode(buf.read()).decode()
+                
+                # Exibir a imagem no Streamlit
+                st.image(f'data:image/png;base64,{img_str}', use_container_width=True)
+                
+                # Adicionar explicação sobre a interpretação da árvore
+                st.markdown('''
+                ### Como interpretar a árvore de decisão:
+                - Cada nó mostra uma condição de decisão baseada em uma das features
+                - Os valores em cada nó representam:
+                  - samples: número de amostras no nó
+                  - value: valor médio previsto para as amostras
+                - As cores mais escuras indicam valores mais altos
+                - As ramificações mostram como o modelo toma decisões baseadas nos valores das features
+                ''')
+
+                # Visualização da Importância das Features
+                st.subheader('Importância das Features')
+                
+                # Calcular e obter a importância das features
+                feature_importance = model.feature_importances_
+                feature_names = ['Days', 'Volume', 'MA_10', 'MA_30']
+                
+                # Criar DataFrame para melhor visualização
+                importance_df = pd.DataFrame({
+                    'Feature': feature_names,
+                    'Importância': feature_importance
+                })
+                importance_df = importance_df.sort_values('Importância', ascending=True)
+                
+                # Criar gráfico de barras horizontais
+                fig_importance = plt.figure(figsize=(10, 6))
+                plt.barh(importance_df['Feature'], importance_df['Importância'])
+                plt.xlabel('Importância')
+                plt.title('Importância das Features no Modelo Random Forest')
+                
+                # Salvar o gráfico em um buffer
+                buf_importance = io.BytesIO()
+                plt.savefig(buf_importance, format='png', bbox_inches='tight')
+                plt.close()
+                
+                # Converter a imagem para base64
+                buf_importance.seek(0)
+                img_str_importance = base64.b64encode(buf_importance.read()).decode()
+                
+                # Exibir a imagem no Streamlit
+                st.image(f'data:image/png;base64,{img_str_importance}', use_container_width=True)
+                
+                # Adicionar explicação sobre a importância das features
+                st.markdown('''
+                ### Como interpretar a importância das features:
+                - O gráfico mostra o peso relativo de cada variável nas previsões do modelo
+                - Quanto maior a barra, mais importante é a feature para o modelo
+                - Features com maior importância têm maior influência nas previsões de preço
+                - Isso ajuda a entender quais fatores são mais relevantes para prever o preço da criptomoeda
+                ''')
 
             # Prever preços para os próximos dias
             forecast_days = st.slider('Quantos dias no futuro você deseja prever?', min_value=1, max_value=30, value=7)
